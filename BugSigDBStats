@@ -9,59 +9,317 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## BugsigDB stat- Signature overlaps
 
-Compare signatures changed in abundance from all diseased subjects in BugsigDB to existing typical signatures from healthy volunteers from BugsigDB Study 562
+Compare genus changed in abundance from all diseased subjects in BugsigDB to existing typical genus from healthy volunteers recorded in BugsigDB Study 562
+typical genus were set at prevalence level=30, 50, and 70
 
 ## Get typical healthy signatures from Study 562
-
 Using feces sample as an example
-
-```{r healthy}
+```{r library}
 library(dplyr)
 library(bugsigdbr)
 library(BugSigDBStats)
 library(ggpubr)
+```
 
-full.dat <- bugsigdbr::importBugSigDB()
+```{r BugsigDB}
+full.dat <- bugsigdbr::importBugSigDB(version = "devel", cache=FALSE)
 #Stripping empty signatures:
 ind1 <- lengths(full.dat[["MetaPhlAn taxon names"]]) > 0
 ind2 <- lengths(full.dat[["NCBI Taxonomy IDs"]]) > 0
-dat <- full.dat[ind1 & ind2,]
+dat <- full.dat[ind1 & ind2,] %>%
+  filter (`Host species`=="Homo sapiens") %>%
+  filter (`Body site` == 'feces')
 
-bugs<- (dat) %>%
+#find number of unique studies
+length(unique(dat$Study))
+```
+```{r BugSigDB genera}
+allbug <- bugsigdbr::getSignatures(dat, tax.level='genus')
+NCBI <- array(unlist(allbug))
+allbuglist <- data.frame(NCBI) %>%
+  distinct(NCBI)
+#total number of unique genera that were reported chnaged in abundance
+length(allbuglist$NCBI)
+```
+
+```{r healthy30}
+#prevalence threshold=30
+bugs30<- (dat) %>%
   filter (Study=='Study 562') %>%
+  filter (Experiment=="Experiment 11") %>%
   filter (`Body site` == "feces") %>%
   filter (grepl("genus",Description))
-healthysig <- bugsigdbr::getSignatures(bugs)  
-head(healthysig)
+healthysig30 <- bugsigdbr::getSignatures(bugs30)  
+head(healthysig30)
 ```
 
+```{r healthy50}
+#prevalence threshold=50%
+bugs50<- (dat) %>%
+  filter (Study=='Study 562') %>%
+  filter (Experiment=="Experiment 3" & `Signature page name`=='Signature 1') %>%
+  filter (`Body site` == "feces") %>%
+  filter (grepl("genus",Description))
+healthysig50 <- bugsigdbr::getSignatures(bugs50)  
+head(healthysig50)
+```
+
+```{r healthy70}
+#prevalence threshold=70%
+bugs70<- (dat) %>%
+  filter (Study=='Study 562') %>%
+  filter (Experiment=="Experiment 9" & `Signature page name`=='Signature 1') %>%
+  filter (`Body site` == "feces") %>%
+  filter (grepl("genus",Description))
+healthysig70 <- bugsigdbr::getSignatures(bugs70)  
+head(healthysig70)
+```
 ## Get disease signature
 
-using signatures increased in abundance in feces as an example
+```{r increased_disease_genus}
+bugdisease_increased <-  dat %>%
+  filter (`Abundance in Group 1`=="increased") 
+length(unique(bugdisease_increased$Study))
+#Get genus level changed in abundance studies only
+diseasesig_increased <- bugsigdbr::getSignatures(bugdisease_increased, tax.level='genus')
+length(diseasesig_increased)
 
-```{r disease}
-bugdisease<-  dat %>%
-  filter (`Host species` == 'Homo sapiens') %>%
-  filter (`Body site` == 'feces') %>%
-  filter (`Abundance in Group 1`=='increased') 
-#get genus level sig change in abundance only
-diseasesig <- bugsigdbr::getSignatures(bugdisease, tax.level='genus')
-head(diseasesig)
+NCBI_increased <- array(unlist(diseasesig_increased))
+#all reported increased genera from BugsigDB
+increasedist <- data.frame(NCBI_increased) 
+distinct_i<-distinct(increasedist)
+count(distinct_i)
+count(increasedist) 
+#A total of 300 studies reported - 232 distinct increased genera, #total 1681 genera
 ```
 
-## Calculate pairwise overlaps
-```{r overlap}
-library(purrr)
-list2 <- c(healthysig, diseasesig)
-paircomp <- calcPairwiseOverlaps(list2)
-head(paircomp)
+```{r decreased_disease_genus}
+bugdisease_decreased <-  dat %>%
+  filter (`Abundance in Group 1`=="decreased") 
+length(unique(bugdisease_decreased$Study))
+#get genus level sig change in abundance only
+diseasesig_decreased <- bugsigdbr::getSignatures(bugdisease_decreased, tax.level='genus')
+length(diseasesig_decreased)
 
-paircheck <- paircomp %>%
-  filter(stringr::str_detect(name1, '_NA:feces-from-healthy-adult_vs_none---50%-prevalence-threshold')) %>%
-  mutate(name2_1=stringr::str_replace(name2, "bsdb:", "")) %>%
-  mutate(name2_2=(stringr::str_split(name2_1,"/"))) %>%
-  mutate(study_id= purrr::map_chr(name2_2, 1),
-          experiment_id= purrr::map_chr(name2_2, 2),
-          signiture_id= purrr::map_chr(stringr::str_split(purrr::map_chr(name2_2, 3),'_'),1)
-        ) 
+NCBI_decreased <- array(unlist(diseasesig_decreased))
+#all reported increased genera from BugsigDB
+decreasedist <- data.frame(NCBI_decreased)
+distinct_d<-distinct(decreasedist)
+count(distinct_d)
+count(decreasedist) 
+#A total of 310 studies reported - 244 distinct decreased genera, #total 1728 genera
+```
+
+```{r all cmg stool NCBI}
+library(curatedMetagenomicData)
+library(dplyr)
+library(mia)
+#keep adult only
+adult <- sampleMetadata %>%
+  filter(age_category %in% (c("adult", "senior"))) 
+#drop empty entry
+adult <- adult[,colSums(is.na(adult))<nrow(adult)]
+#select stool
+stool <- adult %>% filter(body_site == "stool")
+df_sub1 <-
+  stool %>% returnSamples("relative_abundance", rownames = "NCBI")
+df_sub2 <-
+  stool %>% returnSamples("relative_abundance", rownames = "short")
+
+prev <- function(prevalencecutoff = 0.000001) {
+  .returnSig <- function(obj, threshold = 0, prevalence=0.000001){
+    fractionpassing.logical <- rowSums(obj > threshold) / ncol(obj)
+    rows.passing <- fractionpassing.logical > prevalence
+    return(fractionpassing.logical[rows.passing])
+  }
+
+  df_sub.byranks <- mia::splitByRanks(df_sub1)
+  df_subg1 <-
+    .returnSig(assay(df_sub.byranks[["genus"]]), prevalence = prevalencecutoff)
+  df_subs1 <-
+    .returnSig(assay(df_sub.byranks[["species"]]), prevalence = prevalencecutoff)
+  
+  df_sub.byranks <- mia::splitByRanks(df_sub2)
+  df_subg2 <-
+    .returnSig(assay(df_sub.byranks[["genus"]]), prevalence = prevalencecutoff)
+  df_subs2 <-
+    .returnSig(assay(df_sub.byranks[["species"]]), prevalence = prevalencecutoff)
+  
+  df_subg2 <- tibble(name = names(df_subg2), value = df_subg2)
+  df_subs2 <- tibble(name = names(df_subs2), value = df_subs2)
+  df_sub_genus <- data.frame(df_subg1, df_subg2) %>%
+    arrange(desc(value))
+}
+stoollist<-prev(prevalencecutoff = 0.000001)
+stoollist1 <- tibble::rownames_to_column(stoollist, "NCBI")
+write.csv(stoollist1,"/mnt/STORE1/bighome/haoyanzh/DE/allstool_genus.csv", row.names = FALSE)
+```
+
+```{r universe}
+library(readr)
+#get universe - genus that appeared in healthy and unhealthy subjects stool sample from CuratedMetagenomicData
+#appeared in at least 5% of the samples - reduce false positive, N=110
+cmg <- read_csv("/mnt/STORE1/bighome/haoyanzh/DE/allstool_genus.csv",show_col_types = FALSE) %>%
+  filter (value>=0.05) %>%
+  select (NCBI)
+length(cmg$NCBI)
+#get all detectable genera in bugsigdb
+full<-rbind(allbuglist,cmg) %>%
+  distinct(NCBI)
+length(full$NCBI) #489 +  110
+```
+
+```{r enrichment}
+DE_d=as.integer(distinct_d$NCBI_decreased)
+DE_i=as.integer(distinct_i$NCBI_increased)
+
+DE_dfull=as.integer(decreasedist$NCBI_decreased)
+DE_ifull=as.integer(increasedist$NCBI_increased)
+
+healthy30=as.integer(unlist(healthysig30))
+healthy50=as.integer(unlist(healthysig50))
+healthy70=as.integer(unlist(healthysig70))
+```
+
+# Method 2 - unit is each Bugsig DB reported genus (changed in abundance)
+```{r overlap pct 30 - do not take out duplicate BugsigDB genera, unit of analysis is each reported changed genus}
+defull<-decreasedist %>%
+  mutate(healthy30 = ifelse(NCBI_decreased %in% healthy30, 1, 0)) %>%
+  mutate(healthy50 = ifelse(NCBI_decreased %in% healthy50, 1, 0)) %>%
+  mutate(healthy70 = ifelse(NCBI_decreased %in% healthy70, 1, 0)) %>%
+  mutate(decrease=1) %>%
+  rename(NCBI=NCBI_decreased)
+
+infull<-increasedist%>%
+  mutate(healthy30 = ifelse(NCBI_increased %in% healthy30, 1, 0)) %>%
+  mutate(healthy50 = ifelse(NCBI_increased %in% healthy50, 1, 0)) %>%
+  mutate(healthy70 = ifelse(NCBI_increased %in% healthy70, 1, 0)) %>%
+  mutate(decrease=0) %>%
+  rename(NCBI=NCBI_increased)
+
+fullf<-rbind(defull,infull)
+
+table(fullf$decrease,fullf$healthy30)
+table(fullf$decrease,fullf$healthy50)
+table(fullf$decrease,fullf$healthy70)
+```
+
+```{r comparison}
+m30<-table(x=fullf$decrease,y=fullf$healthy30)
+m50<-table(x=fullf$decrease,y=fullf$healthy50)
+m70<-table(x=fullf$decrease,y=fullf$healthy70)
+
+library(epitools)
+oddsratio(m30)
+oddsratio(m50)
+oddsratio(m70)
+```
+```{r all healthy stool NCBI}
+library(curatedMetagenomicData)
+library(dplyr)
+library(mia)
+#keep adult only
+adult <- sampleMetadata %>%
+  filter(age_category %in% (c("adult", "senior"))) %>%
+  filter (disease=="healthy")
+#drop empty entry
+adult <- adult[,colSums(is.na(adult))<nrow(adult)]
+#select stool
+stool <- adult %>% filter(body_site == "stool")
+df_sub1 <-
+  stool %>% returnSamples("relative_abundance", rownames = "NCBI")
+df_sub2 <-
+  stool %>% returnSamples("relative_abundance", rownames = "short")
+
+prev <- function(prevalencecutoff = 0.000001) {
+  .returnSig <- function(obj, threshold = 0, prevalence=0.000001){
+    fractionpassing.logical <- rowSums(obj > threshold) / ncol(obj)
+    rows.passing <- fractionpassing.logical > prevalence
+    return(fractionpassing.logical[rows.passing])
+  }
+
+  df_sub.byranks <- mia::splitByRanks(df_sub1)
+  df_subg1 <-
+    .returnSig(assay(df_sub.byranks[["genus"]]), prevalence = prevalencecutoff)
+  df_subs1 <-
+    .returnSig(assay(df_sub.byranks[["species"]]), prevalence = prevalencecutoff)
+  
+  df_sub.byranks <- mia::splitByRanks(df_sub2)
+  df_subg2 <-
+    .returnSig(assay(df_sub.byranks[["genus"]]), prevalence = prevalencecutoff)
+  df_subs2 <-
+    .returnSig(assay(df_sub.byranks[["species"]]), prevalence = prevalencecutoff)
+  
+  df_subg2 <- tibble(name = names(df_subg2), value = df_subg2)
+  df_subs2 <- tibble(name = names(df_subs2), value = df_subs2)
+  df_sub_genus <- data.frame(df_subg1, df_subg2) %>%
+    arrange(desc(value))
+}
+stoollist<-prev(prevalencecutoff = 0.000001)
+stoollist2 <- tibble::rownames_to_column(stoollist, "NCBI")
+write.csv(stoollist2,"/mnt/STORE1/bighome/haoyanzh/DE/healthystool_genus.csv", row.names = FALSE)
+```
+
+```{r genera NCBI most freq overlaped using healthy genus threshold=30% }
+fullf1<-fullf %>%
+  filter(healthy30==1)
+table(fullf1$NCBI,fullf1$decrease)
+tbl <- with(fullf1, table(NCBI, decrease))
+
+healthyp <- read_csv("/mnt/STORE1/bighome/haoyanzh/DE/healthystool_genus.csv",show_col_types = FALSE) 
+healthyp$NCBI <- as.factor(healthyp$NCBI)   
+tbl1<- as.data.frame(tbl) 
+tbl1$NCBI <- as.factor(tbl1$NCBI) 
+tbl2<- tbl1 %>%
+  left_join(healthyp, by="NCBI")
+levels(tbl2$decrease) <- c("Increased", "Decreased")
+
+ggplot(as.data.frame(tbl2), aes(x = value*100, y = Freq, color = decrease)) +
+  geom_point()+                                 
+  xlab("Prevalence of genus") +
+  ylab("# overlapped genus") + 
+  guides(color = guide_legend(title = "Changed in abundance")) 
+```
+
+
+```{r what genera (NCBI) are most freq overlaped using healthy genus threshold=50%}
+fullf1<-fullf %>%
+  filter(healthy50==1)
+table(fullf1$NCBI,fullf1$decrease)
+tbl <- with(fullf1, table(NCBI, decrease))
+
+healthyp <- read_csv("/mnt/STORE1/bighome/haoyanzh/DE/healthystool_genus.csv",show_col_types = FALSE) 
+healthyp$NCBI <- as.factor(healthyp$NCBI)   
+tbl1<- as.data.frame(tbl) 
+tbl1$NCBI <- as.factor(tbl1$NCBI) 
+tbl2<- tbl1 %>%
+  left_join(healthyp, by="NCBI")
+levels(tbl2$decrease) <- c("Increased", "Decreased")
+
+ggplot(as.data.frame(tbl2), aes(x = value*100, y = Freq, color = decrease)) +
+  geom_point()+                                 
+  xlab("Prevalence of genus") +
+  ylab("# overlapped genus") + 
+  guides(color = guide_legend(title = "Changed in abundance")) 
+```
+
+```{r what genera (NCBI) are most freq overlaped using healthy genus threshold=70%}
+fullf1<-fullf %>%
+  filter(healthy70==1)
+table(fullf1$NCBI,fullf1$decrease)
+tbl <- with(fullf1, table(NCBI, decrease))
+
+healthyp <- read_csv("/mnt/STORE1/bighome/haoyanzh/DE/healthystool_genus.csv",show_col_types = FALSE) 
+healthyp$NCBI <- as.factor(healthyp$NCBI)   
+tbl1<- as.data.frame(tbl) 
+tbl1$NCBI <- as.factor(tbl1$NCBI) 
+tbl2<- tbl1 %>%
+  left_join(healthyp, by="NCBI")
+levels(tbl2$decrease) <- c("Increased", "Decreased")
+
+ggplot(as.data.frame(tbl2), aes(x = value*100, y = Freq, color = decrease)) +
+  geom_point()+                                 
+  xlab("Prevalence of genus") +
+  ylab("# overlapped genus") + 
+  guides(color = guide_legend(title = "Changed in abundance")) 
 ```
