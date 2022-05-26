@@ -6,4 +6,4 @@ run Typicalsig to generate 4 typical healthy signature and prevelance csv files:
 4. matrix_species_child.csv
 files are uploaded to Zenodo: https://doi.org/10.5281/zenodo.6342450
 
-run BugSigDBStats to repriduce analysis for typical signature manuscript 
+run BugSigDBStats.rmd to repriduce analysis for typical signature manuscript 
