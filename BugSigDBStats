@@ -22,7 +22,8 @@ library(ggpubr)
 ```
 
 ```{r BugsigDB}
-full.dat <- bugsigdbr::importBugSigDB(version = "devel", cache=FALSE)
+full.dat <- bugsigdbr::importBugSigDB(version = "10.5281/zenodo.6468009", cache=FALSE) 
+
 #Stripping empty signatures:
 ind1 <- lengths(full.dat[["MetaPhlAn taxon names"]]) > 0
 ind2 <- lengths(full.dat[["NCBI Taxonomy IDs"]]) > 0
@@ -34,12 +35,12 @@ dat <- full.dat[ind1 & ind2,] %>%
 length(unique(dat$Study))
 ```
 ```{r BugSigDB genera}
-allbug <- bugsigdbr::getSignatures(dat, tax.level='genus')
+allbug <- bugsigdbr::getSignatures(dat, tax.level='mixed')
 NCBI <- array(unlist(allbug))
 allbuglist <- data.frame(NCBI) %>%
   distinct(NCBI)
 #total number of unique genera that were reported chnaged in abundance
-length(allbuglist$NCBI)
+length(unique(allbuglist$NCBI))
 ```
 
 ```{r healthy30}
@@ -90,7 +91,7 @@ increasedist <- data.frame(NCBI_increased)
 distinct_i<-distinct(increasedist)
 count(distinct_i)
 count(increasedist) 
-#A total of 300 studies reported - 232 distinct increased genera, #total 1681 genera
+#A total of 299 studies reported - 232 distinct increased genera, #total 1676 genera
 ```
 
 ```{r decreased_disease_genus}
@@ -107,7 +108,7 @@ decreasedist <- data.frame(NCBI_decreased)
 distinct_d<-distinct(decreasedist)
 count(distinct_d)
 count(decreasedist) 
-#A total of 310 studies reported - 244 distinct decreased genera, #total 1728 genera
+#A total of 308 studies reported - 243 distinct decreased genera, #total 1700 genera
 ```
 
 ```{r all cmg stool NCBI}
